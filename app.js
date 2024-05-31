@@ -2,25 +2,24 @@ const express = require('express')
 const path = require('path')
 const {open} = require('sqlite')
 const sqlite3 = require('sqlite3')
-const bcrypt = require('bcrypt')
-const jwt = require('jsonwebtoken')
+const {format, parseISO, isValid} = require('date-fns')
 
 const app = express()
 
 app.use(express.json())
 
-let database = null
+let db = null
 
-let dbPath = path.join(__dirname, 'covid19IndiaPortal.db')
+const dbPath = path.join(__dirname, 'todoApplication.db')
 
-const initializeDbAndServer = async () => {
+const initializeDBAndServer = async () => {
   try {
-    database = await open({
+    db = await open({
       filename: dbPath,
       driver: sqlite3.Database,
     })
     app.listen(3000, () => {
-      console.log('Server running at http://localhost:3000')
+      console.log('Server Running at http://localhost:3000/')
     })
   } catch (e) {
     console.log(`DB Error: ${e.message}`)
@@ -28,169 +27,250 @@ const initializeDbAndServer = async () => {
   }
 }
 
-initializeDbAndServer()
+initializeDBAndServer()
 
-//API 1
+const validateDetails = async (request, response, next) => {
+  let status1, priority1, category1, date1
+  let accessToNext = true
 
-const validateToken = (request, response, next) => {
-  let jwtToken
-  const authHeader = request.headers['authorization']
-  if (authHeader !== undefined) {
-    jwtToken = authHeader.split(' ')[1]
+  if (request.method === 'GET') {
+    let {status, priority, category, date} = request.query
+    status1 = status
+    priority1 = priority
+    category1 = category
+    date1 = date
   } else {
-    response.status(401)
-    response.send('Invalid JWT Token')
+    let {status, priority, category, dueDate} = request.body
+    status1 = status
+    priority1 = priority
+    category1 = category
+    date1 = dueDate
   }
 
-  if (jwtToken === undefined) {
-    response.status(401)
-    response.send('Invalid JWT Token')
-  } else {
-    jwt.verify(jwtToken, 'R_S_Token', (error, payload) => {
-      if (error) {
-        response.send(401)
-        response.send('Invalid JWT Token')
+  if (status1 !== undefined) {
+    const statusBar = ['TO DO', 'IN PROGRESS', 'DONE']
+    if (accessToNext) {
+      if (statusBar.includes(status1)) {
+        accessToNext = true
       } else {
-        next()
+        accessToNext = false
+        response.status(400)
+        response.send('Invalid Todo Status')
       }
-    })
+    }
+  }
+
+  if (priority1 !== undefined) {
+    const priorityBar = ['LOW', 'MEDIUM', 'HIGH']
+    if (accessToNext) {
+      if (priorityBar.includes(priority1)) {
+        accessToNext = true
+      } else {
+        accessToNext = false
+        response.status(400)
+        response.send('Invalid Todo Priority')
+      }
+    }
+  }
+
+  if (category1 !== undefined) {
+    const categoryBar = ['WORK', 'HOME', 'LEARNING']
+    if (accessToNext) {
+      if (categoryBar.includes(category1)) {
+        accessToNext = true
+      } else {
+        accessToNext = false
+        response.status(400)
+        response.send('Invalid Todo Category')
+      }
+    }
+  }
+
+  if (date1 !== undefined) {
+    if (accessToNext) {
+      const l = (date1.length >= 8 ) | (date1.length <=  10)
+      let due_date = new Date(date1)
+      due_date = format(due_date, 'yyyy-MM-dd')
+      console.log(l) 
+      due_date = parseISO(due_date)
+      if (isValid(due_date) & l) {
+        accessToNext = true
+      } else {
+        accessToNext = false
+        response.status(400)
+        response.send('Invalid Due Date')
+      }
+    }
+  }
+
+  if (accessToNext === true) {
+    next()
   }
 }
 
-app.post('/login/', async (request, response) => {
-  const {username, password} = request.body
-  const loginUser = `SELECT * FROM user WHERE username="${username}";`
-  const dbUser = await database.get(loginUser)
-  if (dbUser === undefined) {
-    response.status(400)
-    response.send('Invalid user')
-  } else {
-    const validPassword = await bcrypt.compare(password, dbUser.password)
-    if (validPassword) {
-      const payload = {
-        username: username,
-      }
-      const jwtToken = jwt.sign(payload, 'R_S_Token')
-      response.send({jwtToken})
-    } else {
-      response.status(400)
-      response.send('Invalid password')
-    }
+const hasTodo = todo => {
+  return todo !== undefined
+}
+
+const hasStatus = status => {
+  return status !== undefined
+}
+
+const hasPriority = priority => {
+  return priority !== undefined
+}
+
+const hasCategory = category => {
+  return category !== undefined
+}
+
+const hasdueDate = dueDate => {
+  return dueDate !== undefined
+}
+
+const hasStatusAndPriority = (status, priority) => {
+  return (status !== undefined) & (priority !== undefined)
+}
+
+const hasStatusAndCategory = (status, category) => {
+  return (status !== undefined) & (category !== undefined)
+}
+
+const hasPriorityAndCategory = (priority, category) => {
+  return (priority !== undefined) & (category !== undefined)
+}
+
+//API 1
+
+app.get('/todos/', validateDetails, async (request, response) => {
+  const {status, priority, category, search_q = ''} = request.query
+  let getQuery
+  let result
+  switch (true) {
+    case hasStatus(status):
+      getQuery = `
+      SELECT * FROM todo WHERE status="${status}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    case hasPriority(priority):
+      getQuery = `
+      SELECT * FROM todo WHERE priority="${priority}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    case hasCategory(category):
+      getQuery = `
+      SELECT * FROM todo WHERE category="${category}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    case hasStatusAndPriority(status, priority):
+      getQuery = `
+      SELECT * FROM todo WHERE status="${status}" AND priority="${priority}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    case hasStatusAndCategory(status, category):
+      getQuery = `
+      SELECT * FROM todo WHERE status="${status}" AND category="${category}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    case hasPriorityAndCategory(priority, category):
+      getQuery = `
+      SELECT * FROM todo WHERE priority="${priority}" AND category="${category}" AND todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
+      break
+    default:
+      getQuery = `
+      SELECT * FROM todo WHERE todo LIKE "%${search_q}%";`
+      result = await db.all(getQuery)
+      response.send(result)
   }
 })
 
 //API 2
-
-app.get('/states/', validateToken, async (request, response) => {
-  const getstateQuery = `
-  SELECT * FROM state ORDER BY state_id;`
-  const dbRes = await database.all(getstateQuery)
-  const result = dbRes.map(state => {
-    return {
-      stateId: state.state_id,
-      stateName: state.state_name,
-      population: state.population,
-    }
-  })
-
+app.get('/todos/:todoId/', validateDetails, async (request, response) => {
+  const {todoId} = request.params
+  const getQuery = `SELECT * FROM todo WHERE id=${todoId};`
+  const result = await db.get(getQuery)
   response.send(result)
 })
 
 //API 3
-
-app.get('/states/:stateId/', validateToken, async (request, response) => {
-  const {stateId} = request.params
-  const getstateQuery = `
-  SELECT * FROM state WHERE state_id=${stateId};`
-  const dbstate = await database.get(getstateQuery)
-  const result = {
-    stateId: dbstate.state_id,
-    stateName: dbstate.state_name,
-    population: dbstate.population,
+app.get('/agenda/', validateDetails, async (request, response) => {
+  const {date} = request.query
+  let due_date = new Date(date)
+  due_date = format(due_date, 'yyyy-MM-dd')
+  const getQuery = `
+  SELECT * FROM todo WHERE due_date="${due_date}";`
+  const result = await db.all(getQuery)
+  if(result.due_date !== undefined){
+    response.send(result)
+  }else{
+    response.status(400)
+    response.send("Invalid Due Date")
   }
-  response.send(result)
 })
 
 //API 4
-app.post('/districts/', validateToken, async (request, response) => {
-  const {districtName, stateId, cases, cured, active, deaths} = request.body
-
-  const createDistrict = `
-  INSERT INTO district (district_name, state_id, cases, cured, active, deaths) VALUES 
-  ("${districtName}", ${stateId},${cases},${cured},${active},${deaths});`
-  const res = await database.run(createDistrict)
-  console.log(res)
-  response.send('District Successfully Added')
+app.post('/todos/', validateDetails, async (request, response) => {
+  const {id, todo, status, priority, category, dueDate} = request.body
+  const creteQuery = `
+  INSERT INTO todo (id,todo,priority,status,category,due_date) VALUES (${id},"${todo}","${priority}","${status}","${category}","${dueDate}");`
+  await db.run(creteQuery)
+  response.send('Todo Successfully Added')
 })
 
-//API 5
-app.get('/districts/:districtId', validateToken, async (request, response) => {
-  const {districtId} = request.params
+app.put('/todos/:todoId/', validateDetails, async (request, response) => {
+  const {todoId} = request.params
+  const {todo, status, priority, category, dueDate} = request.body
+  let updateQuery
 
-  const getDistrictDetails = `SELECT * FROM district WHERE district_id = ${districtId};`
-  const dbRes = await database.get(getDistrictDetails)
-  const result = {
-    districtName: dbRes.district_name,
-    stateId: dbRes.state_id,
-    cases: dbRes.cases,
-    cured: dbRes.cured,
-    active: dbRes.active,
-    deaths: dbRes.deaths,
+  switch (true) {
+    case hasTodo(todo):
+      updateQuery = `
+      UPDATE todo SET todo="${todo}" WHERE id=${todoId};`
+      await db.run(updateQuery)
+      response.send('Todo Updated')
+      break
+    case hasStatus(status):
+      updateQuery = `
+      UPDATE todo SET status="${status}" WHERE id=${todoId};`
+      await db.run(updateQuery)
+      response.send('Status Updated')
+      break
+    case hasPriority(priority):
+      updateQuery = `
+      UPDATE todo SET priority="${priority}" WHERE id=${todoId};`
+      await db.run(updateQuery)
+      response.send('Priority Updated')
+      break
+
+    case hasCategory(category):
+      updateQuery = `
+      UPDATE todo SET category="${category}" WHERE id=${todoId};`
+      await db.run(updateQuery)
+      response.send('Category Updated')
+      break
+    case hasdueDate(dueDate):
+      updateQuery = `
+      UPDATE todo SET due_date="${dueDate}" WHERE id=${todoId};`
+      await db.run(updateQuery)
+      response.send('Due Date Updated')
+      break
   }
-
-  response.send(result)
 })
 
 //API 6
-app.delete(
-  '/districts/:districtId/',
-  validateToken,
-  async (request, response) => {
-    const {districtId} = request.params
-
-    const getDistrictDetails = `DELETE FROM district WHERE district_id = ${districtId};`
-    const result = await database.run(getDistrictDetails)
-    response.send('District Removed')
-  },
-)
-
-//API 7
-app.put('/districts/:districtId', validateToken, async (request, response) => {
-  const {districtId} = request.params
-  const {districtName, stateId, cases, cured, active, deaths} = request.body
-
-  const getDistrictDetails = `
-  UPDATE district SET 
-  
-    district_name = "${districtName}",
-    state_id = ${stateId},
-    cases = ${cases},
-    cured = ${cured},
-    active = ${active},
-    deaths = ${deaths}   
-  
-  WHERE 
-  district_id = ${districtId};`
-  const result = await database.run(getDistrictDetails)
-  response.send('District Details Updated')
-})
-
-//API 8
-
-app.get('/states/:stateId/stats/', validateToken, async (request, response) => {
-  const {stateId} = request.params
-  const getstateQuery = `
-  SELECT 
-
-  SUM(cases) as totalCases,
-  SUM(cured) as totalCured,
-  SUM(active) as totalActive,
-  SUM(deaths) as totalDeaths
-  
-  FROM state INNER JOIN district ON state.state_id=district.state_id
-  WHERE state.state_id=${stateId};`
-  const result = await database.get(getstateQuery)
-  response.send(result)
+app.delete('/todos/:todoId/', validateDetails, async (request, response) => {
+  const {todoId} = request.params
+  const deleteQuery = `
+  DELETE FROM todo WHERE id=${todoId};`
+  await db.run(deleteQuery)
+  response.send('Todo Deleted')
 })
 
 module.exports = app
