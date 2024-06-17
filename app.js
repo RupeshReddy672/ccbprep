@@ -1,11 +1,9 @@
 const express = require('express')
 const path = require('path')
-
 const {open} = require('sqlite')
 const sqlite3 = require('sqlite3')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
-const {format} = require('date-fns')
 const app = express()
 app.use(express.json())
 
@@ -68,7 +66,7 @@ app.post('/login', async (request, response) => {
   const dbUser = await db.get(selectUserQuery)
   if (dbUser === undefined) {
     response.status(400)
-    response.send('Invalid User')
+    response.send('Invalid user')
   } else {
     const isPasswordMatched = await bcrypt.compare(password, dbUser.password)
     if (isPasswordMatched === true) {
@@ -79,11 +77,12 @@ app.post('/login', async (request, response) => {
       response.send({jwtToken})
     } else {
       response.status(400)
-      response.send('Invalid Password')
+      response.send('Invalid password')
     }
   }
 })
 
+/// JWT TOKEN VALIDATION
 const validateToken = (request, response, next) => {
   let jwtToken
   const authHeader = request.headers['authorization']
@@ -106,6 +105,7 @@ const validateToken = (request, response, next) => {
   }
 }
 
+//GETTING USER_ID THROUGH USERNAME
 const getuserIdfunc = async username => {
   const getuser = `
   SELECT user_id FROM user WHERE username='${username}';`
@@ -117,9 +117,12 @@ const getuserIdfunc = async username => {
 
 //API 3
 app.get('/user/tweets/feed/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
   const getQuery = `
   SELECT user.username, tweet.tweet, tweet.date_time as dateTime FROM 
-  user NATURAL JOIN tweet ORDER BY dateTime DESC LIMIT 4;`
+  user NATURAL JOIN tweet WHERE user.user_id IN ( SELECT follower.following_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE  user.user_id = ${userId} and user.user_id=follower.follower_user_id);
+   ORDER BY dateTime DESC LIMIT 4;`
   const dbRes = await db.all(getQuery)
   response.send(dbRes)
 })
@@ -274,7 +277,7 @@ app.post('/user/tweets/', validateToken, async (request, response) => {
   const userId = await getuserIdfunc(username)
   const {tweet} = request.body
   console.log(tweet)
-  const dateTime = format(new Date(), 'yyyy-MM-dd HH:mm:SS')
+  const dateTime = new Date()
   console.log(dateTime)
   const createQuery = `
   INSERT INTO tweet (tweet,user_id,date_time)
