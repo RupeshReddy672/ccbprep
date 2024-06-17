@@ -1,296 +1,319 @@
 const express = require('express')
 const path = require('path')
+
 const {open} = require('sqlite')
 const sqlite3 = require('sqlite3')
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
 const {format} = require('date-fns')
-const {isValid} = require('date-fns')
-
 const app = express()
 app.use(express.json())
 
-let dataBase = null
+const dbPath = path.join(__dirname, 'twitterClone.db')
 
-let DatabasePath = path.join(__dirname, 'todoApplication.db')
+let db = null
 
-const initializeDbAndServer = async () => {
+const initializeDBAndServer = async () => {
   try {
-    dataBase = await open({
-      filename: DatabasePath,
+    db = await open({
+      filename: dbPath,
       driver: sqlite3.Database,
     })
-
     app.listen(3000, () => {
-      console.log('Server Running at http://localhost:3000')
+      console.log('Server Running at http://localhost:3000/')
     })
   } catch (e) {
-    console.log(e.message)
+    console.log(`DB Error: ${e.message}`)
+    process.exit(1)
   }
 }
 
-initializeDbAndServer()
+initializeDBAndServer()
 
-const validateDetails = async (request, response, next) => {
-  let category1, priority1, status1, dueDate1
-
-  console.log(request.method)
-  console.log(request.method != 'GET' && request.method != 'DELETE')
-  if (request.method != 'GET' && request.method != 'DELETE') {
-    let {category, priority, status, dueDate} = request.body
-    category1 = category
-    priority1 = priority
-    status1 = status
-    dueDate1 = dueDate
+//API 1
+app.post('/register/', async (request, response) => {
+  const {username, password, name, gender} = request.body
+  const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`
+  const dbUser = await db.get(selectUserQuery)
+  if (dbUser === undefined) {
+    if (password.length >= 6) {
+      const hashedPassword = await bcrypt.hash(password, 10)
+      const createUserQuery = `
+      INSERT INTO 
+          user (username, name, password, gender) 
+      VALUES 
+          (
+          '${username}', 
+          '${name}',
+          '${hashedPassword}', 
+          '${gender}'
+          )`
+      await db.run(createUserQuery)
+      response.status(200)
+      response.send(`User created successfully`)
+    } else {
+      response.status(400)
+      response.send('Password is too short')
+    }
   } else {
-    let {category, priority, status, date} = request.query
-    category1 = category
-    priority1 = priority
-    status1 = status
-    dueDate1 = date
+    response.status(400)
+    response.send('User already exists')
   }
-
-  console.log(category1, priority1, status1, dueDate1)
-  if (category1 != undefined) {
-    const categoryBar = ['WORK', 'HOME', 'LEARNING']
-    if (categoryBar.includes(category1)) {
-      console.log(category1)
-    } else {
-      response.status(400)
-      response.send('Invalid Todo Category')
-      return
-    }
-  }
-
-  if (status1 != undefined) {
-    const statusBar = ['TO DO', 'IN PROGRESS', 'DONE']
-    if (statusBar.includes(status1)) {
-      console.log(status1)
-    } else {
-      response.status(400)
-      response.send('Invalid Todo Status')
-      return
-    }
-  }
-
-  if (priority1 != undefined) {
-    const priorityBar = ['HIGH', 'MEDIUM', 'LOW']
-    if (priorityBar.includes(priority1)) {
-      console.log(priority1)
-    } else {
-      response.status(400)
-      response.send('Invalid Todo Priority')
-      return
-    }
-  }
-
-  if (dueDate1 != undefined) {
-    let due_date = format(new Date(dueDate1), 'yyyy-MM-dd')
-    console.log(due_date)
-
-    let date1 = new Date(due_date)
-    console.log(date1)
-    date1 = new Date(
-      `${date1.getFullYear()}-${date1.getMonth() + 1}-${date1.getDate()}`,
-    )
-
-    console.log(date1)
-
-    console.log(isValid(date1))
-
-    if (isValid(date1)) {
-      console.log(`valid due_date: ${dueDate1}`)
-      request.dueDate = due_date
-    } else {
-      response.status(400)
-      response.send('Invalid Todo Due Date')
-      return
-    }
-  }
-
-  next()
-}
-
-const hasStatus = status => {
-  return status != undefined
-}
-
-const hasPriority = priority => {
-  return priority != undefined
-}
-
-const hasCategory = category => {
-  return category != undefined
-}
-
-const hasTodo = todo => {
-  return todo != undefined
-}
-
-const hasDueDate = dueDate => {
-  return dueDate != undefined
-}
-
-const hasPriorityAndStatus = (priority, status) => {
-  return (priority != undefined) & (status != undefined)
-}
-const hasStatusAndCategory = (status, category) => {
-  return (category != undefined) & (status != undefined)
-}
-const hasCategoryAndPriority = (category, priority) => {
-  return (priority != undefined) & (category != undefined)
-}
-
-app.get('/todos/', validateDetails, async (request, response) => {
-  let getQuery
-  const {search_q = '', priority, category, status} = request.query
-
-  switch (true) {
-    case hasStatus(status):
-      getQuery = `
-      SELECT * FROM todo WHERE status = "${status}" and todo like "%${search_q}%";`
-      break
-
-    case hasPriority(priority):
-      getQuery = `
-      SELECT * FROM todo WHERE priority = "${priority}" and todo like "%${search_q}%";`
-      break
-    case hasCategory(category):
-      getQuery = `
-      SELECT * FROM todo WHERE  category= "${category}" and todo like "%${search_q}%";`
-      break
-
-    case hasPriorityAndStatus(priority, status):
-      getQuery = `
-      SELECT * FROM todo WHERE priority="${priority}" and status="${status}" and todo like "%${search_q}%";`
-      break
-    case hasStatusAndCategory(status, category):
-      getQuery = `
-      SELECT * FROM todo WHERE category="${category}" and status="${status}" and todo like "%${search_q}%";`
-      break
-    case hasCategoryAndPriority(category, priority):
-      getQuery = `
-      SELECT * FROM todo WHERE category="${category}" and priority="${priority}" and todo like "%${search_q}%";`
-      break
-    default:
-      getQuery = `
-      SELECT * FROM todo WHERE todo like "%${search_q}%";`
-      break
-  }
-
-  const result = await dataBase.all(getQuery)
-  const resultArray = result.map(each => {
-    return {
-      id: each.id,
-      todo: each.todo,
-      priority: each.priority,
-      status: each.status,
-      category: each.category,
-      dueDate: each.due_date,
-    }
-  })
-  response.send(resultArray)
 })
 
-//Specified GET API
-app.get('/todos/:todoId/', validateDetails, async (request, response) => {
-  const {todoId} = request.params
-  const getSpecifiedQuery = `
-  SELECT * FROM todo WHERE id = ${todoId};`
-
-  let result = await dataBase.get(getSpecifiedQuery)
-  if (response != undefined) {
-    result = {
-      id: result.id,
-      todo: result.todo,
-      priority: result.priority,
-      status: result.status,
-      category: result.category,
-      dueDate: result.due_date,
+//API 2
+app.post('/login', async (request, response) => {
+  const {username, password} = request.body
+  const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`
+  const dbUser = await db.get(selectUserQuery)
+  if (dbUser === undefined) {
+    response.status(400)
+    response.send('Invalid User')
+  } else {
+    const isPasswordMatched = await bcrypt.compare(password, dbUser.password)
+    if (isPasswordMatched === true) {
+      const payload = {
+        username: username,
+      }
+      const jwtToken = jwt.sign(payload, 'R_S_Token')
+      response.send({jwtToken})
+    } else {
+      response.status(400)
+      response.send('Invalid Password')
     }
   }
-  response.send(result)
 })
 
-//API AGENDA 3
-app.get('/agenda/', validateDetails, async (request, response) => {
-  const {dueDate} = request
-  console.log(dueDate)
-  const getSpecifiedQuery = `
-  SELECT * FROM todo WHERE due_date='${dueDate}';
-  `
-  let result = await dataBase.all(getSpecifiedQuery)
-  if (result.length != 0) {
-    result = result.map(each => {
-      return {
-        id: each.id,
-        todo: each.todo,
-        priority: each.priority,
-        status: each.status,
-        category: each.category,
-        dueDate: each.due_date,
+const validateToken = (request, response, next) => {
+  let jwtToken
+  const authHeader = request.headers['authorization']
+  if (authHeader !== undefined) {
+    jwtToken = authHeader.split(' ')[1]
+  }
+  if (jwtToken === undefined) {
+    response.status(401)
+    response.send('Invalid JWT Token')
+  } else {
+    jwt.verify(jwtToken, 'R_S_Token', async (error, payload) => {
+      if (error) {
+        response.status(401)
+        response.send('Invalid JWT Token')
+      } else {
+        request.username = payload.username
+        next()
       }
     })
   }
+}
 
-  response.send(result)
+const getuserIdfunc = async username => {
+  const getuser = `
+  SELECT user_id FROM user WHERE username='${username}';`
+  let userId = await db.get(getuser)
+  userId = userId.user_id
+  console.log(userId)
+  return userId
+}
+
+//API 3
+app.get('/user/tweets/feed/', validateToken, async (request, response) => {
+  const getQuery = `
+  SELECT user.username, tweet.tweet, tweet.date_time as dateTime FROM 
+  user NATURAL JOIN tweet ORDER BY dateTime DESC LIMIT 4;`
+  const dbRes = await db.all(getQuery)
+  response.send(dbRes)
 })
 
-//POST API
-app.post('/todos/', validateDetails, async (request, response) => {
-  const {id, todo, priority, status, category} = request.body
-  const {dueDate} = request
-  console.log(dueDate)
-  const createTodo = `
-  INSERT INTO todo (id,todo,priority,status,category,due_date) VALUES 
-  (${id},"${todo}","${priority}","${status}","${category}","${dueDate}");`
-  await dataBase.run(createTodo)
-  response.send('Todo Successfully Added')
+//API 4
+app.get('/user/following/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const getQuery = `
+    SELECT name FROM user WHERE user_id IN ( SELECT follower.following_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE  user.user_id = ${userId} and user.user_id=follower.follower_user_id);
+    `
+  const dbRes = await db.all(getQuery)
+  response.send(dbRes)
 })
 
-//PUT API
-app.put('/todos/:todoId/', validateDetails, async (request, response) => {
-  let putQuery
-  const {todoId} = request.params
-  const {todo, priority, status, category} = request.body
-  const {dueDate} = request
+//API 5
+app.get('/user/followers/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const getQuery = `
+    SELECT name FROM user WHERE user_id IN ( SELECT follower.follower_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE user.user_id=follower.follower_user_id and follower.following_user_id = '${userId}');
+    `
+  const dbRes = await db.all(getQuery)
+  response.send(dbRes)
+})
 
-  switch (true) {
-    case hasStatus(status):
-      putQuery = `UPDATE todo SET status="${status}" WHERE id=${todoId};`
-      await dataBase.run(putQuery)
-      response.send('Status Updated')
-      break
-    case hasCategory(category):
-      putQuery = `UPDATE todo SET category="${category}" WHERE id=${todoId};`
-      await dataBase.run(putQuery)
-      response.send('Category Updated')
-      break
-    case hasPriority(priority):
-      putQuery = `UPDATE todo SET priority="${priority}" WHERE id=${todoId};`
-      await dataBase.run(putQuery)
-      response.send('Priority Updated')
-      break
-
-    case hasTodo(todo):
-      putQuery = `UPDATE todo SET todo="${todo}" WHERE id=${todoId};`
-      await dataBase.run(putQuery)
-      response.send('Todo Updated')
-      break
-
-    case hasDueDate(dueDate):
-      putQuery = `UPDATE todo SET due_date="${dueDate}" WHERE id=${todoId};`
-      await dataBase.run(putQuery)
-      response.send('Due Date Updated')
+//API 6
+app.get('/tweets/:tweetId/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const {tweetId} = request.params
+  const getTweetuserId = `SELECT user_id FROM tweet WHERE tweet.tweet_id= ${tweetId};`
+  let dbTweetuserId = await db.get(getTweetuserId)
+  dbTweetuserId = dbTweetuserId.user_id
+  const getQueryuserfollowing = `
+    SELECT user_id FROM user WHERE user_id IN ( SELECT follower.following_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE  user.user_id = ${userId} and user.user_id=follower.follower_user_id);
+    `
+  const dbRes = await db.all(getQueryuserfollowing)
+  const userfollowinglist = dbRes.map(each => {
+    return each.user_id
+  })
+  if (userfollowinglist.includes(dbTweetuserId)) {
+    const getQuery = `
+    SELECT tweet.tweet,
+    count(DISTINCT like.like_id) as likes,
+    count(DISTINCT reply.reply_id) as replies,
+    tweet.date_time as dateTime 
+    FROM (tweet LEFT JOIN like ON tweet.tweet_id=like.tweet_id ) 
+    LEFT JOIN reply ON tweet.tweet_id = reply.tweet_id 
+    WHERE tweet.tweet_id=${tweetId} and tweet.user_id IN (${userfollowinglist});`
+    const dbtweetDetailsRes = await db.get(getQuery)
+    response.send(dbtweetDetailsRes)
+  } else {
+    response.status(401)
+    response.send('Invalid Request')
   }
 })
 
-//DELETE API
+//API 7
 
-app.delete('/todos/:todoId/', validateDetails, async (request, response) => {
-  const {todoId} = request.params
-  const deleteQuery = `
-  DELETE FROM todo WHERE id=${todoId};`
-  await dataBase.run(deleteQuery)
-  response.send('Todo Deleted')
+app.get('/tweets/:tweetId/likes/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const {tweetId} = request.params
+  const getTweetuserId = `SELECT user_id FROM tweet WHERE tweet.tweet_id= ${tweetId};`
+  let dbTweetuserId = await db.get(getTweetuserId)
+  dbTweetuserId = dbTweetuserId.user_id
+  const getQueryuserfollowing = `
+    SELECT user_id FROM user WHERE user_id IN ( SELECT follower.following_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE  user.user_id = ${userId} and user.user_id=follower.follower_user_id);
+    `
+  const dbRes = await db.all(getQueryuserfollowing)
+  const userfollowinglist = dbRes.map(each => {
+    return each.user_id
+  })
+  if (userfollowinglist.includes(dbTweetuserId)) {
+    const getQuery = `SELECT user.username as likes  FROM user NATURAL JOIN like WHERE like.tweet_id=${tweetId};`
+    const dbtweetDetailsRes = await db.all(getQuery)
+    let result = dbtweetDetailsRes.map(each => {
+      return each.likes
+    })
+    result = {
+      likes: result,
+    }
+    response.send(result)
+  } else {
+    response.status(401)
+    response.send('Invalid Request')
+  }
+})
+
+//API 8
+app.get(
+  '/tweets/:tweetId/replies/',
+  validateToken,
+  async (request, response) => {
+    const {username} = request
+    const userId = await getuserIdfunc(username)
+    const {tweetId} = request.params
+    const getTweetuserId = `SELECT user_id FROM tweet WHERE tweet.tweet_id= ${tweetId};`
+    let dbTweetuserId = await db.get(getTweetuserId)
+    dbTweetuserId = dbTweetuserId.user_id
+    const getQueryuserfollowing = `
+    SELECT user_id FROM user WHERE user_id IN ( SELECT follower.following_user_id FROM user INNER JOIN follower ON user.user_id = follower.follower_user_id WHERE  user.user_id = ${userId} and user.user_id=follower.follower_user_id);
+    `
+    const dbRes = await db.all(getQueryuserfollowing)
+    const userfollowinglist = dbRes.map(each => {
+      return each.user_id
+    })
+    if (userfollowinglist.includes(dbTweetuserId)) {
+      const getQuery = `SELECT user.name, reply.reply FROM user NATURAL JOIN reply WHERE reply.tweet_id=${tweetId};`
+      const dbtweetDetailsRes = await db.all(getQuery)
+      let result = {
+        replies: dbtweetDetailsRes,
+      }
+      response.send(result)
+    } else {
+      response.status(401)
+      response.send('Invalid Request')
+    }
+  },
+)
+
+//API 9
+app.get('/user/tweets', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const getUserTweetUserIds = `SELECT tweet_id FROM tweet WHERE user_id=${userId};`
+
+  const userTweetsIds = await db.all(getUserTweetUserIds)
+  console.log(userTweetsIds)
+  let result = []
+  if (userTweetsIds != undefined) {
+    for (let tweetId of userTweetsIds) {
+      const getQuery = `
+        SELECT tweet.tweet,
+        count(DISTINCT like.like_id) as likes,
+        count(DISTINCT reply.reply_id) as replies,
+        tweet.date_time as dateTime 
+        FROM (tweet LEFT JOIN like ON tweet.tweet_id=like.tweet_id ) 
+        LEFT JOIN reply ON tweet.tweet_id = reply.tweet_id 
+        WHERE tweet.tweet_id=${tweetId.tweet_id} and tweet.user_id=${userId};`
+      const dbtweetDetailsRes = await db.get(getQuery)
+      result.push(dbtweetDetailsRes)
+    }
+  }
+  response.send(result)
+})
+
+//API 10
+app.post('/user/tweets/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const {tweet} = request.body
+  console.log(tweet)
+  const dateTime = format(new Date(), 'yyyy-MM-dd HH:mm:SS')
+  console.log(dateTime)
+  const createQuery = `
+  INSERT INTO tweet (tweet,user_id,date_time)
+   VALUES 
+   (
+    '${tweet}',
+    ${userId},
+    '${dateTime}'
+   )`
+  const dbRes = await db.run(createQuery)
+  console.log(dbRes)
+
+  response.send('Created a Tweet')
+})
+
+//API 11
+app.delete('/tweets/:tweetId/', validateToken, async (request, response) => {
+  const {username} = request
+  const userId = await getuserIdfunc(username)
+  const {tweetId} = request.params
+
+  const accessingUserId = `
+  SELECT user_id FROM tweet WHERE tweet_id=${tweetId};`
+  let tweetUserId = await db.get(accessingUserId)
+  if (tweetUserId != undefined) {
+    tweetUserId = tweetUserId.user_id
+    if (userId === tweetUserId) {
+      const deleteQuery = `
+      DELETE FROM tweet WHERE tweet_id=${tweetId};`
+      await db.run(deleteQuery)
+      response.send('Tweet Removed')
+    } else {
+      response.status(401)
+      response.send('Invalid Request')
+    }
+  } else {
+    response.status(400)
+    response.send('User Does Not Excits!')
+  }
 })
 
 module.exports = app
