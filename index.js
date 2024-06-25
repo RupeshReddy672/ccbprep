@@ -1,37 +1,33 @@
 import {Component} from 'react'
 import './index.css'
 
-class ClickCounter extends Component {
+class EvenOddApp extends Component {
   state = {count: 0}
 
-  increment = () => {
-    this.setState(stateCount => ({count: stateCount.count + 1}))
+  onIncrement = () => {
+    const val = 0
+    this.setState(() => ({count: val}))
   }
 
   render() {
     const {count} = this.state
+    const counter = count % 2 === 0 ? 'Odd' : 'Even'
+
     return (
       <div className="bg-container">
-        <div className="counter-container">
-          <h1 className="counter-heading">
-            The Buttton has been clicked
-            <br />
-            <span className="counter-element">
-              {' '}
-              {count === 0 ? String(0) : String(count)}
-            </span>{' '}
-            times
-          </h1>
-          <p className="counter-instruction">
-            click the button to increase the count!
-          </p>
-          <button type="button" className="button" onClick={this.increment}>
-            Click Me!
+        <div className="even-odd-container">
+          <h1 className="heading">Count {count}</h1>
+          <p className="counter">Count is {counter}</p>
+          <button type="button" onClick={this.onIncrement} className="button">
+            Increment
           </button>
+          <p className="instruction">
+            *Increase By Random Number Between 0 to 100
+          </p>
         </div>
       </div>
     )
   }
 }
 
-export default ClickCounter
+export default EvenOddApp
